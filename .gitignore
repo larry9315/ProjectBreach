@@ -1,0 +1,28 @@
+# Unreal Engine
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Visual Studio
+.vs/
+*.VC.db
+*.VC.opendb
+*.suo
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# User files
+*.user
+*.opensdf
+*.sdf
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
