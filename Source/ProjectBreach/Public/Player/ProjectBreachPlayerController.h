@@ -14,7 +14,7 @@ class UUserWidget;
  *  Manages input mappings
  */
 UCLASS(abstract)
-class AProjectBreachPlayerController : public APlayerController
+class PROJECTBREACH_API AProjectBreachPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 	

@@ -7,10 +7,11 @@
 #include "ProjectBreachGameMode.generated.h"
 
 /**
- *  Simple GameMode for a third person game
+ * Authoritative gameplay rules and framework-class configuration for
+ * Project Breach.
  */
 UCLASS(abstract)
-class AProjectBreachGameMode : public AGameModeBase
+class PROJECTBREACH_API AProjectBreachGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 

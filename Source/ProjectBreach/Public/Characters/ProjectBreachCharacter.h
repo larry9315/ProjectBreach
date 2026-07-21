@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "Logging/LogMacros.h"
 #include "ProjectBreachCharacter.generated.h"
 
 class USpringArmComponent;
@@ -12,14 +11,12 @@ class UCameraComponent;
 class UInputAction;
 struct FInputActionValue;
 
-DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
-
 /**
  *  A simple player-controllable third person character
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class AProjectBreachCharacter : public ACharacter
+class PROJECTBREACH_API AProjectBreachCharacter : public ACharacter
 {
 	GENERATED_BODY()
 
