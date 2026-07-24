@@ -14,6 +14,8 @@
 
 AProjectBreachCharacter::AProjectBreachCharacter()
 {
+	PrimaryActorTick.bCanEverTick = true;
+
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
 		
@@ -50,6 +52,25 @@ AProjectBreachCharacter::AProjectBreachCharacter()
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
 }
 
+void AProjectBreachCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	NormalWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
+	NormalCameraArmLength = CameraBoom->TargetArmLength;
+	NormalCameraSocketOffset = CameraBoom->SocketOffset;
+	NormalCameraFieldOfView = FollowCamera->FieldOfView;
+
+	ApplyMovementSpeed();
+}
+
+void AProjectBreachCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	UpdateCamera(DeltaSeconds);
+}
+
 void AProjectBreachCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	// Set up action bindings
@@ -61,15 +82,40 @@ void AProjectBreachCharacter::SetupPlayerInputComponent(UInputComponent* PlayerI
 
 		// Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AProjectBreachCharacter::Move);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &AProjectBreachCharacter::MoveCompleted);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &AProjectBreachCharacter::MoveCompleted);
 		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AProjectBreachCharacter::Look);
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AProjectBreachCharacter::Look);
+
+		// Sprinting
+		if (SprintAction)
+		{
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &AProjectBreachCharacter::SprintStarted);
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &AProjectBreachCharacter::SprintCompleted);
+			EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Canceled, this, &AProjectBreachCharacter::SprintCompleted);
+		}
+
+		// Aiming
+		if (AimAction)
+		{
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &AProjectBreachCharacter::AimStarted);
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &AProjectBreachCharacter::AimCompleted);
+			EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Canceled, this, &AProjectBreachCharacter::AimCompleted);
+		}
 	}
 	else
 	{
 		UE_LOG(LogProjectBreach, Error, TEXT("'%s' Failed to find an Enhanced Input component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
 	}
+}
+
+void AProjectBreachCharacter::UnPossessed()
+{
+	Super::UnPossessed();
+
+	ResetLocomotionState();
 }
 
 void AProjectBreachCharacter::Move(const FInputActionValue& Value)
@@ -90,8 +136,38 @@ void AProjectBreachCharacter::Look(const FInputActionValue& Value)
 	DoLook(LookAxisVector.X, LookAxisVector.Y);
 }
 
+void AProjectBreachCharacter::MoveCompleted(const FInputActionValue& Value)
+{
+	bHasMovementInput = false;
+	RefreshSprintState();
+}
+
+void AProjectBreachCharacter::SprintStarted(const FInputActionValue& Value)
+{
+	DoSprintStart();
+}
+
+void AProjectBreachCharacter::SprintCompleted(const FInputActionValue& Value)
+{
+	DoSprintEnd();
+}
+
+void AProjectBreachCharacter::AimStarted(const FInputActionValue& Value)
+{
+	DoAimStart();
+}
+
+void AProjectBreachCharacter::AimCompleted(const FInputActionValue& Value)
+{
+	DoAimEnd();
+}
+
 void AProjectBreachCharacter::DoMove(float Right, float Forward)
 {
+	const FVector2D MovementInput(Right, Forward);
+	bHasMovementInput = MovementInput.SizeSquared() > FMath::Square(MinimumSprintInput);
+	RefreshSprintState();
+
 	if (GetController() != nullptr)
 	{
 		// find out which way is forward
@@ -130,4 +206,110 @@ void AProjectBreachCharacter::DoJumpEnd()
 {
 	// signal the character to stop jumping
 	StopJumping();
+}
+
+void AProjectBreachCharacter::DoSprintStart()
+{
+	bSprintRequested = true;
+	RefreshSprintState();
+
+	if (bIsAiming)
+	{
+		UE_LOG(LogProjectBreach, Log, TEXT("'%s' Sprint requested while aiming; request will remain pending."), *GetNameSafe(this));
+	}
+}
+
+void AProjectBreachCharacter::DoSprintEnd()
+{
+	bSprintRequested = false;
+	RefreshSprintState();
+}
+
+void AProjectBreachCharacter::DoAimStart()
+{
+	SetAiming(true);
+}
+
+void AProjectBreachCharacter::DoAimEnd()
+{
+	SetAiming(false);
+}
+
+void AProjectBreachCharacter::RefreshSprintState()
+{
+	SetSprinting(bSprintRequested && bHasMovementInput && !bIsAiming);
+}
+
+void AProjectBreachCharacter::SetSprinting(bool bNewIsSprinting)
+{
+	if (bIsSprinting == bNewIsSprinting)
+	{
+		return;
+	}
+
+	bIsSprinting = bNewIsSprinting;
+	ApplyMovementSpeed();
+
+	UE_LOG(LogProjectBreach, Log, TEXT("'%s' Sprint state changed: %s"), *GetNameSafe(this), bIsSprinting ? TEXT("Active") : TEXT("Inactive"));
+	BP_OnSprintStateChanged(bIsSprinting);
+}
+
+void AProjectBreachCharacter::SetAiming(bool bNewIsAiming)
+{
+	if (bIsAiming == bNewIsAiming)
+	{
+		return;
+	}
+
+	bIsAiming = bNewIsAiming;
+	RefreshSprintState();
+	ApplyMovementSpeed();
+
+	UE_LOG(LogProjectBreach, Log, TEXT("'%s' Aim state changed: %s"), *GetNameSafe(this), bIsAiming ? TEXT("Active") : TEXT("Inactive"));
+	BP_OnAimStateChanged(bIsAiming);
+}
+
+void AProjectBreachCharacter::ApplyMovementSpeed()
+{
+	float TargetSpeed = NormalWalkSpeed;
+
+	if (bIsAiming)
+	{
+		TargetSpeed = AimSpeed;
+	}
+	else if (bIsSprinting)
+	{
+		TargetSpeed = SprintSpeed;
+	}
+
+	GetCharacterMovement()->MaxWalkSpeed = TargetSpeed;
+}
+
+void AProjectBreachCharacter::UpdateCamera(float DeltaSeconds)
+{
+	const float TargetArmLength = bIsAiming ? AimedCameraArmLength : NormalCameraArmLength;
+	const float TargetFieldOfView = bIsAiming ? AimedFieldOfView : NormalCameraFieldOfView;
+	const FVector TargetSocketOffset = bIsAiming ? AimedCameraSocketOffset : NormalCameraSocketOffset;
+
+	if (CameraInterpolationSpeed <= 0.0f)
+	{
+		CameraBoom->TargetArmLength = TargetArmLength;
+		CameraBoom->SocketOffset = TargetSocketOffset;
+		FollowCamera->SetFieldOfView(TargetFieldOfView);
+		return;
+	}
+
+	CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaSeconds, CameraInterpolationSpeed);
+	CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaSeconds, CameraInterpolationSpeed);
+	FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFieldOfView, DeltaSeconds, CameraInterpolationSpeed));
+}
+
+void AProjectBreachCharacter::ResetLocomotionState()
+{
+	bSprintRequested = false;
+	bHasMovementInput = false;
+	SetAiming(false);
+	SetSprinting(false);
+
+	UE_LOG(LogProjectBreach, Log, TEXT("'%s' Locomotion state reset after unpossession."), *GetNameSafe(this));
 }
